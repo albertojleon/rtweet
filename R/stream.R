@@ -136,6 +136,7 @@ stream_tweets <- function(q = "",
                           parse = TRUE,
                           token = NULL,
                           file_name = NULL,
+                          write_stdout = FALSE,
                           verbose = TRUE,
                           ...) {
   if ("append" %in% names(list(...))) {
@@ -147,6 +148,9 @@ stream_tweets <- function(q = "",
     op <- getOption("encoding")
     options(encoding = "UTF-8")
     on.exit(options(encoding = op), add = TRUE)
+  }
+  if(write_stdout){
+    verbose = FALSE
   }
   token <- check_token(token)
   if (!timeout) {
@@ -191,13 +195,15 @@ stream_tweets <- function(q = "",
     )
   }
   r <- NULL
-  con <- file(file_name, "wt")
-  on.exit({sh <- tryCatch(close(con), error = function(e) return(NULL),
-    warning = function(w) return(NULL))}, add = TRUE)
 
+  
   start_time <- Sys.time()
   stop_time <- Sys.time() + timeout
   ctr <- 0
+  if(!write_stdout){
+  con <- file(file_name, "wt")
+  on.exit({sh <- tryCatch(close(con), error = function(e) return(NULL),
+                          warning = function(w) return(NULL))}, add = TRUE)
   while (timeout > 0) {
     r <- tryCatch(httr::POST(
       url = url,
@@ -227,6 +233,22 @@ stream_tweets <- function(q = "",
   }
   if (verbose) message("streaming data saved as ", file_name)
   invisible(r)
+  }else{ # write_stdout == TRUE
+    while (timeout > 0) {
+      r <- tryCatch(httr::POST(
+        url = url,
+        httr::config(token = token, timeout = timeout),
+        httr::write_stream(function(x) {print(x)}),
+        httr::add_headers(Accept = "application/json"),
+        httr::add_headers(`Accept-Encoding` = "gzip, deflate")),
+        error = function(e) return(e))
+      timeout <- as.numeric(difftime(stop_time, Sys.time(), units = "secs"))
+      if (timeout > 0) {
+        ctr <- ctr + 1
+        if (ctr == 5) break
+      }
+    }
+  }
 }
 
 write_fun <- function(con) {
@@ -252,7 +274,7 @@ stream_params <- function(stream, ...) {
   op <- getOption("encoding")
   on.exit(options(encoding = op), add = TRUE)
   options(encoding = "UTF-8")
-
+  
   if (inherits(stream, "coords")) {
     stream <- stream$box
   }
@@ -337,7 +359,7 @@ stream_data <- function(file_name, ...) {
     if (length(d) > 0) {
       dd <- sapply(d, function(x) {
         o <- tryCatch(jsonlite::fromJSON(x),
-          error = function(e) return(FALSE))
+                      error = function(e) return(FALSE))
         if (identical(o, FALSE)) return(FALSE)
         return(TRUE)
       }, USE.NAMES = FALSE)
@@ -355,7 +377,7 @@ data_from_stream <- function(x, n = 10000L, n_max = -1L, ...) {
   }
   if (!requireNamespace("readr", quietly = TRUE)) {
     warning("For better performance when reading large twitter .json files, ",
-      "try installing the readr package before using this function.")
+            "try installing the readr package before using this function.")
     return(stream_data(x, ...))
   }
   ## initalize counters and output vector
@@ -393,7 +415,7 @@ data_from_stream2 <- function(x, n = 10000L, n_max = -1L, ...) {
   }
   if (!requireNamespace("readr", quietly = TRUE)) {
     warning("For better performance when reading large twitter .json files, ",
-      "try installing the readr package before using this function.")
+            "try installing the readr package before using this function.")
     return(stream_data(x, ...))
   }
   ## initalize counters and output vector
@@ -480,14 +502,14 @@ stream_tweets2 <- function(..., dir = NULL, append = FALSE) {
   if (!dir.exists(dir)) {
     new_dir(dir)
   }
-
+  
   ## capture and match dots
   dots <- match_fun(list(...), "stream_tweets")
   ## start time
   start <- Sys.time()
   ## finish time (given requested timeout)
   reqtime <- start + dots[["timeout"]]
-
+  
   ## save file name for final file
   file_name <- dots[["file_name"]]
   if (is.null(file_name)) {
@@ -501,17 +523,17 @@ stream_tweets2 <- function(..., dir = NULL, append = FALSE) {
   ## store verbose value, then override to FALSE
   verbose <- dots[["verbose"]]
   dots[["verbose"]] <- FALSE
-
+  
   ## display message if verbose
   if (verbose) {
     message(paste0("Streaming tweets for ", dots[["timeout"]], " seconds..."))
   }
-
+  
   ## initialize output vector
   rt <- list()
   ## start counter
   i <- 1L
-
+  
   ## restart and continue stream until reqtime
   while (Sys.time() <= reqtime) {
     dots[["file_name"]] <- file.path(dir, paste0(file_name, "-", i, ".json"))
@@ -578,5 +600,3 @@ stream_dir <- function() {
   timestamp <- gsub("\\s|\\:|\\-", "", substr(Sys.time(), 1, 19))
   paste0("stream-", timestamp)
 }
-
-
