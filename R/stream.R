@@ -238,7 +238,7 @@ stream_tweets <- function(q = "",
       r <- tryCatch(httr::POST(
         url = url,
         httr::config(token = token, timeout = timeout),
-        httr::write_stream(function(x) {print(x)}),
+        httr::write_stream(function(x) {print(rawToChar(x))}),
         httr::add_headers(Accept = "application/json"),
         httr::add_headers(`Accept-Encoding` = "gzip, deflate")),
         error = function(e) return(e))
