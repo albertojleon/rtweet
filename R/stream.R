@@ -44,6 +44,14 @@
 #' @param file_name Character with name of file. By default, a
 #'   temporary file is created, tweets are parsed and returned to
 #'   parent environment, and the temporary file is deleted.
+#' @param write_json_stdout Redirects the data stream to the standard output. 
+#'   By default, \code{write_json_stdout = FALSE}. This approach
+#'   is useful for piping the output stream, which allows the processing
+#'   of completed blocks of data while maintaining the data stream open to 
+#'   receive new ones. For instance, the output of an R script that uses 
+#'   \code{rtweet::stream_tweets} with the \code{write_json_stdout = TRUE} option
+#'   can be fed to the \code{split} command to produce multiple files: 
+#'   \code{Rscript my_script.R | split -l1000 -d --additional-suffix .json - myTweets_}.
 #' @param verbose Logical, indicating whether or not to include output
 #'   processing/retrieval messages.
 #' @param \dots Insert magical parameters, spell, or potion here. Or
@@ -136,7 +144,7 @@ stream_tweets <- function(q = "",
                           parse = TRUE,
                           token = NULL,
                           file_name = NULL,
-                          write_stdout = FALSE,
+                          write_json_stdout = FALSE,
                           verbose = TRUE,
                           ...) {
   if ("append" %in% names(list(...))) {
@@ -148,9 +156,6 @@ stream_tweets <- function(q = "",
     op <- getOption("encoding")
     options(encoding = "UTF-8")
     on.exit(options(encoding = op), add = TRUE)
-  }
-  if(write_stdout){
-    verbose = FALSE
   }
   token <- check_token(token)
   if (!timeout) {
@@ -188,7 +193,7 @@ stream_tweets <- function(q = "",
   if (!grepl("\\.json$", file_name)) {
     file_name <- paste0(file_name, ".json")
   }
-  if (!file.exists(file_name)) file.create(file_name)
+  if (!file.exists(file_name) & !write_json_stdout) file.create(file_name)
   if (verbose) {
     message(
       paste0("Streaming tweets for ", timeout, " seconds...")
@@ -196,44 +201,43 @@ stream_tweets <- function(q = "",
   }
   r <- NULL
 
-  
   start_time <- Sys.time()
   stop_time <- Sys.time() + timeout
   ctr <- 0
-  if(!write_stdout){
-  con <- file(file_name, "wt")
-  on.exit({sh <- tryCatch(close(con), error = function(e) return(NULL),
-                          warning = function(w) return(NULL))}, add = TRUE)
-  while (timeout > 0) {
-    r <- tryCatch(httr::POST(
-      url = url,
-      httr::config(token = token, timeout = timeout),
-      httr::write_stream(write_fun(con)),
-      httr::add_headers(Accept = "application/json"),
-      httr::add_headers(`Accept-Encoding` = "gzip, deflate")),
-      error = function(e) return(e))
-    timeout <- as.numeric(difftime(stop_time, Sys.time(), units = "secs"))
-    if (timeout > 0) {
-      ctr <- ctr + 1
-      if (ctr == 1 && verbose) message(
-        "The stream disconnected prematurely. Reconnecting...")
-      if (ctr == 2 && verbose) message("Reconnecting again...")
-      if (ctr == 5) break
-    } else if (verbose) {
-      message("Finished streaming tweets!")
+  if(!write_json_stdout){
+    con <- file(file_name, "wt")
+    on.exit({sh <- tryCatch(close(con), error = function(e) return(NULL),
+                            warning = function(w) return(NULL))}, add = TRUE)
+    while (timeout > 0) {
+      r <- tryCatch(httr::POST(
+        url = url,
+        httr::config(token = token, timeout = timeout),
+        httr::write_stream(write_fun(con)),
+        httr::add_headers(Accept = "application/json"),
+        httr::add_headers(`Accept-Encoding` = "gzip, deflate")),
+        error = function(e) return(e))
+      timeout <- as.numeric(difftime(stop_time, Sys.time(), units = "secs"))
+      if (timeout > 0) {
+        ctr <- ctr + 1
+        if (ctr == 1 && verbose) message(
+          "The stream disconnected prematurely. Reconnecting...")
+        if (ctr == 2 && verbose) message("Reconnecting again...")
+        if (ctr == 5) break
+      } else if (verbose) {
+        message("Finished streaming tweets!")
+      }
     }
-  }
-  close(con)
-  if (parse) {
-    out <- parse_stream(file_name, verbose = verbose)
-    if (tmp) {
-      file.remove(file_name)
+    close(con)
+    if (parse) {
+      out <- parse_stream(file_name, verbose = verbose)
+      if (tmp) {
+        file.remove(file_name)
+      }
+      return(out)
     }
-    return(out)
-  }
-  if (verbose) message("streaming data saved as ", file_name)
-  invisible(r)
-  }else{ # write_stdout == TRUE
+    if (verbose) message("streaming data saved as ", file_name)
+    invisible(r)
+  }else{ # write_json_stdout == TRUE
     while (timeout > 0) {
       r <- tryCatch(httr::POST(
         url = url,
