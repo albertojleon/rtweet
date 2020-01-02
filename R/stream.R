@@ -375,6 +375,7 @@ stream_data <- function(file_name, ...) {
   tweets_with_users(s)
 }
 
+#' @export
 data_from_stream <- function(x, n = 10000L, n_max = -1L, ...) {
   if (!file.exists(x)) {
     stop("No such file exists", call. = FALSE)
